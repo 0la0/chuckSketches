@@ -1,14 +1,23 @@
 Impulse impulse;
 BiQuad biQuadFilter;
-Echo echo;
+Gain delayGate;
+Gain delayGain;
+Gain mainGain;
 JCRev reverb;
+Gain feedback;
+DelayL delay;
 
 OscRecv oscReceiver;
-OscEvent accelerometerOscEvent;
 OscEvent reverbOscEvent;
-OscEvent delayOscEvent;
+OscEvent delayGainOscEvent;
+OscEvent delayFeedbackOscEvent;
+OscEvent frequencyOscEvent;
+OscEvent timeToRepeatOscEvent;
+OscEvent timeToRepeatDetailOscEvent;
+OscEvent timeToRepeatJitterOscEvent;
 
 float timeToAdvance;
+int timeToAdvanceJitter;
 
 function void initializeVariables () {
   0.99 => biQuadFilter.prad;
@@ -16,27 +25,24 @@ function void initializeVariables () {
   0.2 => biQuadFilter.gain;
   500 => biQuadFilter.pfreq;
   0 => reverb.mix;
+
+  500::ms => delay.max => delay.delay;
+  0.8 => feedback.gain;
+  0.99 => delay.gain;
+  0.0 => delayGate.gain;
+
   100 => timeToAdvance;
+  0 => timeToAdvanceJitter;
 
   8081 => oscReceiver.port;
   oscReceiver.listen();
-  oscReceiver.event("/accelerometer, ffff") @=> accelerometerOscEvent;
   oscReceiver.event("/reverb, f") @=> reverbOscEvent;
-  oscReceiver.event("/delay, f") @=> delayOscEvent;
-}
-
-function void accelerometerListener () {
-  while (true) {
-    accelerometerOscEvent => now;
-    accelerometerOscEvent.nextMsg();
-    accelerometerOscEvent.getFloat() => float alpha;
-    accelerometerOscEvent.getFloat() => float beta;
-    accelerometerOscEvent.getFloat() => float gamma;
-    accelerometerOscEvent.getFloat() => float blank;
-
-    normalizeAccelerometerValue(alpha) * 500 + 5 => timeToAdvance;
-    normalizeAccelerometerValue(beta) * 4000 => biQuadFilter.pfreq;
-  }
+  oscReceiver.event("/delay/gain, f") @=> delayGainOscEvent;
+  oscReceiver.event("/delay/feedback, f") @=> delayFeedbackOscEvent;
+  oscReceiver.event("/frequency, f") @=> frequencyOscEvent;
+  oscReceiver.event("/timeToRepeat/rough, f") @=> timeToRepeatOscEvent;
+  oscReceiver.event("/timeToRepeat/detail, i") @=> timeToRepeatDetailOscEvent;
+  oscReceiver.event("/timeToRepeat/jitter, i") @=> timeToRepeatJitterOscEvent;
 }
 
 function void reverbListener () {
@@ -48,34 +54,91 @@ function void reverbListener () {
   }
 }
 
-function void delayListener () {
+function void delayGainListener () {
   while (true) {
-    delayOscEvent => now;
-    delayOscEvent.nextMsg();
-    delayOscEvent.getFloat() => float delayValue;
+    delayGainOscEvent => now;
+    delayGainOscEvent.nextMsg();
+    delayGainOscEvent.getFloat() => float value;
+    Math.max(0, Math.min(value, 1)) => delayGate.gain;
+  }
+}
+
+function void delayFeedbackListener () {
+  while (true) {
+    delayFeedbackOscEvent => now;
+    delayFeedbackOscEvent.nextMsg();
+    delayFeedbackOscEvent.getFloat() => float value;
+    Math.max(0, Math.min(value, 1)) => feedback.gain;
+  }
+}
+
+function void frequencyListener () {
+  while (true) {
+    frequencyOscEvent => now;
+    frequencyOscEvent.nextMsg();
+    frequencyOscEvent.getFloat() => float value;
+    Math.max(0, Math.min(value, 1)) => float normalValue;
+    normalValue * 4000 => biQuadFilter.pfreq;
+  }
+}
+
+function void timeToRepeatListener () {
+  while (true) {
+    timeToRepeatOscEvent => now;
+    timeToRepeatOscEvent.nextMsg();
+    timeToRepeatOscEvent.getFloat() => float value;
+    Math.max(0, Math.min(value, 1)) => float normalValue;
+    normalValue * 450 + 20 => timeToAdvance;
+  }
+}
+
+function void timeToRepeatDetailListener () {
+  while (true) {
+    timeToRepeatDetailOscEvent => now;
+    timeToRepeatDetailOscEvent.nextMsg();
+    timeToRepeatDetailOscEvent.getInt()=> int value;
+    value => timeToAdvance;
+  }
+}
+
+function void timeToRepeatJitterListener () {
+  while (true) {
+    timeToRepeatJitterOscEvent => now;
+    timeToRepeatJitterOscEvent.nextMsg();
+    timeToRepeatJitterOscEvent.getInt()=> int value;
+    value => timeToAdvanceJitter;
   }
 }
 
 function void soundShred () {
-  impulse => biQuadFilter => reverb => dac;
+
+  impulse => biQuadFilter => reverb => mainGain => dac;
+  reverb => delayGate => delayGain => mainGain;
+  delayGain => feedback => delay => delayGain;
+
   while (true) {
     1.0 => impulse.next;
-    timeToAdvance::ms => now;
+    timeToAdvance + (timeToAdvanceJitter * Math.random2f(0, 1)) => float millisecondsToAdvance;
+    millisecondsToAdvance::ms => now;
   }
 }
 
 function float normalizeAccelerometerValue (float value) {
-  Math.max(-9.8, Math.min(value, 9.8)) => value;
-  (value / 9.8) => value;
+  Math.max(-9.3, Math.min(value, 9.3)) => value;
+  (value / 9.3) => value;
   ((value + 1) / 2) => value;
   return value;
 }
 
 function void init () {
   initializeVariables();
-  spork ~ accelerometerListener();
   spork ~ reverbListener();
-  spork ~ delayListener();
+  spork ~ delayGainListener();
+  spork ~ delayFeedbackListener();
+  spork ~ frequencyListener();
+  spork ~ timeToRepeatListener();
+  spork ~ timeToRepeatDetailListener();
+  spork ~ timeToRepeatJitterListener();
   spork ~ soundShred();
 }
 
