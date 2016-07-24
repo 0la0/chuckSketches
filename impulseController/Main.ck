@@ -17,7 +17,7 @@ OscEvent timeToRepeatDetailOscEvent;
 OscEvent timeToRepeatJitterOscEvent;
 
 float timeToAdvance;
-int timeToAdvanceJitter;
+float timeToAdvanceJitter;
 
 function void initializeVariables () {
   0.99 => biQuadFilter.prad;
@@ -41,8 +41,8 @@ function void initializeVariables () {
   oscReceiver.event("/delay/feedback, f") @=> delayFeedbackOscEvent;
   oscReceiver.event("/frequency, f") @=> frequencyOscEvent;
   oscReceiver.event("/timeToRepeat/rough, f") @=> timeToRepeatOscEvent;
-  oscReceiver.event("/timeToRepeat/detail, i") @=> timeToRepeatDetailOscEvent;
-  oscReceiver.event("/timeToRepeat/jitter, i") @=> timeToRepeatJitterOscEvent;
+  oscReceiver.event("/timeToRepeat/detail, f") @=> timeToRepeatDetailOscEvent;
+  oscReceiver.event("/timeToRepeat/jitter, f") @=> timeToRepeatJitterOscEvent;
 }
 
 function void reverbListener () {
@@ -96,8 +96,9 @@ function void timeToRepeatDetailListener () {
   while (true) {
     timeToRepeatDetailOscEvent => now;
     timeToRepeatDetailOscEvent.nextMsg();
-    timeToRepeatDetailOscEvent.getInt()=> int value;
-    value => timeToAdvance;
+    timeToRepeatDetailOscEvent.getFloat() => float value;
+    Math.max(0, Math.min(value, 1)) => float normalValue;
+    normalValue * 20 => timeToAdvance;
   }
 }
 
@@ -105,8 +106,9 @@ function void timeToRepeatJitterListener () {
   while (true) {
     timeToRepeatJitterOscEvent => now;
     timeToRepeatJitterOscEvent.nextMsg();
-    timeToRepeatJitterOscEvent.getInt()=> int value;
-    value => timeToAdvanceJitter;
+    timeToRepeatJitterOscEvent.getFloat() => float value;
+    Math.max(0, Math.min(value, 1)) => float normalValue;
+    normalValue * 50 => timeToAdvanceJitter;
   }
 }
 
